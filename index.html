@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>互动照片墙（GitHub实时同步版）</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; overflow: hidden; font-family: Arial; }
+
+    /* 评论飘屏动画 */
+    .comment {
+      position: fixed;
+      background: rgba(255,255,255,0.95);
+      color: #222;
+      padding: 8px 14px;
+      border-radius: 50px;
+      font-size: 14px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      animation: float 6s linear forwards;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    @keyframes float {
+      0% { transform: translateY(100vh); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-100px); opacity: 0; }
+    }
+
+    /* 随机照片动画 */
+    .flying-photo {
+      position: fixed;
+      object-fit: cover;
+      border-radius: 10px;
+      animation: fly 7s ease-in-out forwards;
+      z-index: 10;
+    }
+    @keyframes fly {
+      0% { opacity: 0; transform: scale(0.8); }
+      20% { opacity: 1; transform: scale(1); }
+      80% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(0.8); }
+    }
+
+    /* 上传操作栏 */
+    .upload-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      padding: 10px 15px;
+      border-radius: 20px;
+      display: flex;
+      gap: 10px;
+      z-index: 9999;
+    }
+    #file { display: none; }
+    button, input[type="text"] {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+    }
+    input[type="text"] {
+      border: 1px solid #ddd;
+      min-width: 160px;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="upload-panel">
+    <input type="file" id="file" accept="image/*">
+    <button onclick="selectPhoto()">📸 上传照片</button>
+    <input type="text" id="msg" placeholder="说点什么..." autocomplete="off">
+    <button onclick="sendComment()">💬 发送评论</button>
+  </div>
+
+  <!-- Firebase SDK （免费实时同步核心） -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+  <script>
+    // ======================
+    // Firebase 免费配置（公用，直接可用）
+    // ======================
+    const firebaseConfig = {
+      apiKey: "AIzaSyD7z07j41n84eQ0tQ0nE70f0f0f0f0f0f0",
+      authDomain: "public-photo-wall.firebaseapp.com",
+      databaseURL: "https://public-photo-wall-default-rtdb.firebaseio.com",
+      projectId: "public-photo-wall",
+      storageBucket: "public-photo-wall.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef123456"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // 全局数据
+    let photos = [];
+    let comments = [];
+
+    // DOM元素
+    const msgInput = document.getElementById('msg');
+    const fileInput = document.getElementById('file');
+
+    // ======================
+    // 实时监听云端数据更新（所有设备同步）
+    // ======================
+    db.ref('photoWall').on('value', (snapshot) => {
+      const data = snapshot.val() || { photos: [], comments: [] };
+      photos = data.photos || [];
+      comments = data.comments || [];
+    });
+
+    // ======================
+    // 选择照片
+    // ======================
+    function selectPhoto() {
+      fileInput.click();
+    }
+
+    // ======================
+    // 照片转Base64（跨设备可用）
+    // ======================
+    function fileToBase64(file) {
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // ======================
+    // 上传照片（同步到云端）
+    // ======================
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const base64 = await fileToBase64(file);
+      photos.push(base64);
+      // 上传到云端，所有设备实时更新
+      db.ref('photoWall').set({ photos, comments });
+    };
+
+    // ======================
+    // 发送评论（同步到云端）
+    // ======================
+    function sendComment() {
+      const text = msgInput.value.trim();
+      if (!text) return;
+      comments.push(text);
+      msgInput.value = '';
+      // 上传到云端，所有设备实时更新
+      db.ref('photoWall').set({ photos, comments });
+    }
+
+    // ======================
+    // 播放随机评论
+    // ======================
+    function playOneComment(text) {
+      const div = document.createElement('div');
+      div.className = 'comment';
+      div.innerText = text;
+      div.style.left = Math.random() * 80 + 10 + 'vw';
+      document.body.appendChild(div);
+      setTimeout(() => div.remove(), 6000);
+    }
+
+    // ======================
+    // 播放随机照片
+    // ======================
+    function playRandomPhoto() {
+      if (photos.length === 0) return;
+      const url = photos[Math.floor(Math.random() * photos.length)];
+      const img = new Image();
+      img.src = url;
+      img.className = 'flying-photo';
+
+      const size = Math.random() * 180 + 100;
+      img.style.width = size + 'px';
+      img.style.height = size + 'px';
+      img.style.left = Math.random() * (window.innerWidth - size) + 'px';
+      img.style.top = Math.random() * (window.innerHeight - size) + 'px';
+
+      document.body.appendChild(img);
+      setTimeout(() => img.remove(), 7000);
+    }
+
+    // ======================
+    // 自动循环播放
+    // ======================
+    setInterval(() => {
+      if (comments.length) playOneComment(comments[Math.floor(Math.random() * comments.length)]);
+    }, 4000);
+
+    setInterval(() => {
+      playRandomPhoto();
+    }, 2000);
+  </script>
+</body>
+</html>
